@@ -107,6 +107,8 @@ matrix:
   # we need to build by vendor due to 50min time limit for builds
   # each env setting here is a dedicated build
     - env:
+        - BUILDMAN="mvebu"
+    - env:
         - BUILDMAN="arm11"
     - env:
         - BUILDMAN="arm7"
@@ -157,8 +159,6 @@ matrix:
           TOOLCHAIN="x86_64"
     - env:
         - BUILDMAN="kirkwood"
-    - env:
-        - BUILDMAN="mvebu"
     - env:
         - BUILDMAN="pxa"
     - env:
