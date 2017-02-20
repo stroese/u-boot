@@ -283,3 +283,18 @@
 &cps_utmi0 {
 	status = "okay";
 };
+
+&cpm_mdio {
+	phy3: ethernet-phy@3 {
+		reg = <1>;
+	};
+};
+
+&cpm_ethernet {
+	status = "okay";
+	eth@2 {
+		status = "okay";
+		phy = <&phy3>;
+		phy-mode = "rgmii-id";
+	};
+};
