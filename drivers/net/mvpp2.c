@@ -4538,6 +4538,10 @@ static const struct udevice_id mvpp2_ids[] = {
 		.compatible = "marvell,armada-375-pp2",
 		.data = MVPP21,
 	},
+	{
+		.compatible = "marvell,armada-7k-pp22",
+		.data = MVPP22,
+	},
 	{ }
 };
 
