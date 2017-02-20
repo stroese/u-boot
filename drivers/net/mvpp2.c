@@ -26,7 +26,7 @@
 #include <phy.h>
 #include <miiphy.h>
 #include <watchdog.h>
-#include <asm-generic/bitsperlong.h>
+//#include <asm-generic/bitsperlong.h>
 #include <asm/arch/cpu.h>
 #include <asm/arch/soc.h>
 #include <linux/compat.h>
