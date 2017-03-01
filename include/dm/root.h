@@ -115,4 +115,16 @@ int dm_init(void);
  */
 int dm_uninit(void);
 
+/**
+ * dm_remove_devices_flags - Call remove function of all drivers with
+ *                           specific removal flags set to selectively
+ *                           remove drivers
+ *
+ * All devices with the matching flags set will be removed
+ *
+ * @flags: Flags for selective device removal
+ * @return 0 if OK, -ve on error
+ */
+int dm_remove_devices_flags(uint flags);
+
 #endif
