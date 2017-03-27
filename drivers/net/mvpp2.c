@@ -442,7 +442,7 @@ do {									\
 /* MPCS registers */
 
 #define PCS40G_COMMON_CONTROL			0x14
-#define      FORWARD_ERROR_CORRECTION_MASK	BIT(1)
+#define      FORWARD_ERROR_CORRECTION_MASK	BIT(10)
 
 #define PCS_CLOCK_RESET				0x14c
 #define      TX_SD_CLK_RESET_MASK		BIT(0)
@@ -3244,7 +3244,7 @@ static int gop_xpcs_mode(struct mvpp2_port *port, int num_of_lanes)
 
 	/* configure XG MAC mode */
 	val = readl(port->priv->xpcs_base + MVPP22_XPCS_GLOBAL_CFG_0_REG);
-	val &= ~MVPP22_XPCS_PCSMODE_OFFS;
+	val &= ~MVPP22_XPCS_PCSMODE_MASK;
 	val &= ~MVPP22_XPCS_LANEACTIVE_MASK;
 	val |= (2 * lane) << MVPP22_XPCS_LANEACTIVE_OFFS;
 	writel(val, port->priv->xpcs_base + MVPP22_XPCS_GLOBAL_CFG_0_REG);
@@ -4472,7 +4472,15 @@ static int mvpp2_rx_refill(struct mvpp2_port *port,
 /* Set hw internals when starting port */
 static void mvpp2_start_dev(struct mvpp2_port *port)
 {
-	mvpp2_gmac_max_rx_size_set(port);
+	switch (port->phy_interface) {
+	case PHY_INTERFACE_MODE_RGMII:
+	case PHY_INTERFACE_MODE_RGMII_ID:
+	case PHY_INTERFACE_MODE_SGMII:
+		mvpp2_gmac_max_rx_size_set(port);
+	default:
+		break;
+	}
+
 	mvpp2_txp_max_tx_size_set(port);
 
 	if (port->priv->hw_version == MVPP21)
@@ -4567,11 +4575,16 @@ static int mvpp2_open(struct udevice *dev, struct mvpp2_port *port)
 		return err;
 	}
 
-	err = mvpp2_phy_connect(dev, port);
-	if (err < 0)
-		return err;
+	if (port->phy_node) {
+		err = mvpp2_phy_connect(dev, port);
+		if (err < 0)
+			return err;
 
-	mvpp2_link_event(port);
+		mvpp2_link_event(port);
+	} else {
+		mvpp2_egress_enable(port);
+		mvpp2_ingress_enable(port);
+	}
 
 	mvpp2_start_dev(port);
 
@@ -4716,13 +4729,19 @@ static int phy_info_parse(struct udevice *dev, struct mvpp2_port *port)
 	const char *phy_mode_str;
 	int phy_node;
 	u32 id;
-	u32 phyaddr;
+	u32 phyaddr = 0;
 	int phy_mode = -1;
 
 	phy_node = fdtdec_lookup_phandle(gd->fdt_blob, port_node, "phy");
-	if (phy_node < 0) {
-		dev_err(&pdev->dev, "missing phy\n");
-		return -ENODEV;
+
+	if (phy_node > 0) {
+		phyaddr = fdtdec_get_int(gd->fdt_blob, phy_node, "reg", 0);
+		if (phyaddr < 0) {
+			dev_err(&pdev->dev, "could not find phy address\n");
+			return -1;
+		}
+	} else {
+		phy_node = 0;
 	}
 
 	phy_mode_str = fdt_getprop(gd->fdt_blob, port_node, "phy-mode", NULL);
@@ -4747,8 +4766,6 @@ static int phy_info_parse(struct udevice *dev, struct mvpp2_port *port)
 	/* Get phy-speed for SGMII 2.5Gbps vs 1Gbps setup */
 	port->phy_speed = fdtdec_get_int(gd->fdt_blob, port_node,
 					 "phy-speed", 1000);
-
-	phyaddr = fdtdec_get_int(gd->fdt_blob, phy_node, "reg", 0);
 
 	port->id = id;
 	if (port->priv->hw_version == MVPP21)
@@ -5309,7 +5326,14 @@ static int mvpp2_start(struct udevice *dev)
 	/* Reconfigure parser accept the original MAC address */
 	mvpp2_prs_update_mac_da(port, port->dev_addr);
 
-	mvpp2_port_power_up(port);
+	switch (port->phy_interface) {
+	case PHY_INTERFACE_MODE_RGMII:
+	case PHY_INTERFACE_MODE_RGMII_ID:
+	case PHY_INTERFACE_MODE_SGMII:
+		mvpp2_port_power_up(port);
+	default:
+		break;
+	}
 
 	mvpp2_open(dev, port);
 
@@ -5472,7 +5496,8 @@ static int mvpp2_probe(struct udevice *dev)
 			port->gop_id * MVPP22_PORT_OFFSET;
 
 		/* Set phy address of the port */
-		mvpp22_smi_phy_addr_cfg(port);
+		if(port->phy_node)
+			mvpp22_smi_phy_addr_cfg(port);
 
 		/* GoP Init */
 		gop_port_init(port);
