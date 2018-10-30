@@ -73,6 +73,7 @@
 #include <common.h>
 #include <command.h>
 #include <malloc.h>
+#include <mtd.h>
 #include <jffs2/load_kernel.h>
 #include <linux/list.h>
 #include <linux/ctype.h>
@@ -1725,6 +1726,9 @@ int mtdparts_init(void)
 	int ids_changed;
 	char tmp_ep[PARTITION_MAXLEN + 1];
 	char tmp_parts[MTDPARTS_MAXLEN];
+
+	/* First probe all MTD devices */
+	mtd_probe_devices();
 
 	debug("\n---mtdparts_init---\n");
 	if (!initialized) {
