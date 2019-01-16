@@ -10,11 +10,14 @@
  */
 
 #include <common.h>
+#include <dm.h>
+#include <dm/device-internal.h>
+#include <dm/lists.h>
 #include <pci.h>
-#include <linux/errno.h>
 #include <asm/io.h>
 #include <asm/arch/cpu.h>
 #include <asm/arch/soc.h>
+#include <linux/errno.h>
 #include <linux/mbus.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -66,7 +69,6 @@ struct resource {
 
 struct mvebu_pcie {
 	struct pci_controller hose;
-	char *name;
 	void __iomem *base;
 	void __iomem *membase;
 	struct resource mem;
@@ -75,9 +77,10 @@ struct mvebu_pcie {
 	u32 lane;
 	u32 lane_mask;
 	pci_dev_t dev;
+	char name[16];
+	int mem_target;
+	int mem_attr;
 };
-
-#define to_pcie(_hc)	container_of(_hc, struct mvebu_pcie, pci)
 
 /*
  * MVEBU PCIe controller needs MEMORY and I/O BARs to be mapped
@@ -88,11 +91,6 @@ static void __iomem *mvebu_pcie_membase = (void __iomem *)MBUS_PCI_MEM_BASE;
 #define PCIE_MEM_SIZE	(128 << 20)
 
 #if defined(CONFIG_ARMADA_38X)
-#define PCIE_BASE(if)					\
-	((if) == 0 ?					\
-	 MVEBU_REG_PCIE0_BASE :				\
-	 (MVEBU_REG_PCIE_BASE + 0x4000 * (if - 1)))
-
 /*
  * On A38x MV6820 these PEX ports are supported:
  *  0 - Port 0.0
@@ -101,7 +99,6 @@ static void __iomem *mvebu_pcie_membase = (void __iomem *)MBUS_PCI_MEM_BASE;
  *  3 - Port 3.0
  */
 #define MAX_PEX 4
-static struct mvebu_pcie pcie_bus[MAX_PEX];
 
 static void mvebu_get_port_lane(struct mvebu_pcie *pcie, int pex_idx,
 				int *mem_target, int *mem_attr)
@@ -117,11 +114,6 @@ static void mvebu_get_port_lane(struct mvebu_pcie *pcie, int pex_idx,
 	*mem_attr = attr[pex_idx];
 }
 #else
-#define PCIE_BASE(if)							\
-	((if) < 8 ?							\
-	 (MVEBU_REG_PCIE_BASE + ((if) / 4) * 0x40000 + ((if) % 4) * 0x4000) : \
-	 (MVEBU_REG_PCIE_BASE + 0x2000 + ((if) % 8) * 0x40000))
-
 /*
  * On AXP MV78460 these PEX ports are supported:
  *  0 - Port 0.0
@@ -136,7 +128,6 @@ static void mvebu_get_port_lane(struct mvebu_pcie *pcie, int pex_idx,
  *  9 - Port 3.0
  */
 #define MAX_PEX 10
-static struct mvebu_pcie pcie_bus[MAX_PEX];
 
 static void mvebu_get_port_lane(struct mvebu_pcie *pcie, int pex_idx,
 				int *mem_target, int *mem_attr)
@@ -154,6 +145,10 @@ static void mvebu_get_port_lane(struct mvebu_pcie *pcie, int pex_idx,
 	*mem_attr = attr[pex_idx];
 }
 #endif
+
+struct mvebu_pcie_base {
+	struct mvebu_pcie pcie[MAX_PEX];
+};
 
 static int mvebu_pex_unit_is_x4(int pex_idx)
 {
@@ -211,67 +206,83 @@ static inline struct mvebu_pcie *hose_to_pcie(struct pci_controller *hose)
 	return container_of(hose, struct mvebu_pcie, hose);
 }
 
-static int mvebu_pcie_read_config_dword(struct pci_controller *hose,
-		pci_dev_t dev, int offset, u32 *val)
+static int mvebu_pcie_read_config(struct udevice *bus, pci_dev_t bdf,
+				  uint offset, ulong *valuep,
+				  enum pci_size_t size)
 {
-	struct mvebu_pcie *pcie = hose_to_pcie(hose);
+	struct mvebu_pcie *pcie = dev_get_platdata(bus);
 	int local_bus = PCI_BUS(pcie->dev);
 	int local_dev = PCI_DEV(pcie->dev);
 	u32 reg;
+	u32 data;
+
+	debug("PCIE CFG read:  (b,d,f)=(%2d,%2d,%2d) ",
+	      PCI_BUS(bdf), PCI_DEV(bdf), PCI_FUNC(bdf));
 
 	/* Only allow one other device besides the local one on the local bus */
-	if (PCI_BUS(dev) == local_bus && PCI_DEV(dev) != local_dev) {
-		if (local_dev == 0 && PCI_DEV(dev) != 1) {
+	if (PCI_BUS(bdf) == local_bus && PCI_DEV(bdf) != local_dev) {
+		if (local_dev == 0 && PCI_DEV(bdf) != 1) {
+			debug("- out of range\n");
 			/*
 			 * If local dev is 0, the first other dev can
 			 * only be 1
 			 */
-			*val = 0xffffffff;
-			return 1;
-		} else if (local_dev != 0 && PCI_DEV(dev) != 0) {
+			*valuep = pci_get_ff(size);
+			return 0;
+		} else if (local_dev != 0 && PCI_DEV(bdf) != 0) {
+			debug("- out of range\n");
 			/*
 			 * If local dev is not 0, the first other dev can
 			 * only be 0
 			 */
-			*val = 0xffffffff;
-			return 1;
+			*valuep = pci_get_ff(size);
+			return 0;
 		}
 	}
 
 	/* write address */
-	reg = PCIE_CONF_ADDR(dev, offset);
+	reg = PCIE_CONF_ADDR(bdf, offset);
 	writel(reg, pcie->base + PCIE_CONF_ADDR_OFF);
-	*val = readl(pcie->base + PCIE_CONF_DATA_OFF);
+	data = readl(pcie->base + PCIE_CONF_DATA_OFF);
+	debug("(addr,val)=(0x%04x, 0x%08x)\n", offset, data);
+	*valuep = pci_conv_32_to_size(data, offset, size);
 
 	return 0;
 }
 
-static int mvebu_pcie_write_config_dword(struct pci_controller *hose,
-		pci_dev_t dev, int offset, u32 val)
+static int mvebu_pcie_write_config(struct udevice *bus, pci_dev_t bdf,
+				   uint offset, ulong value,
+				   enum pci_size_t size)
 {
-	struct mvebu_pcie *pcie = hose_to_pcie(hose);
+	struct mvebu_pcie *pcie = dev_get_platdata(bus);
 	int local_bus = PCI_BUS(pcie->dev);
 	int local_dev = PCI_DEV(pcie->dev);
+	u32 data;
+
+	debug("PCIE CFG write: (b,d,f)=(%2d,%2d,%2d) ",
+	      PCI_BUS(bdf), PCI_DEV(bdf), PCI_FUNC(bdf));
+	debug("(addr,val)=(0x%04x, 0x%08lx)\n", offset, value);
 
 	/* Only allow one other device besides the local one on the local bus */
-	if (PCI_BUS(dev) == local_bus && PCI_DEV(dev) != local_dev) {
-		if (local_dev == 0 && PCI_DEV(dev) != 1) {
+	if (PCI_BUS(bdf) == local_bus && PCI_DEV(bdf) != local_dev) {
+		if (local_dev == 0 && PCI_DEV(bdf) != 1) {
 			/*
 			 * If local dev is 0, the first other dev can
 			 * only be 1
 			 */
-			return 1;
-		} else if (local_dev != 0 && PCI_DEV(dev) != 0) {
+			return 0;
+		} else if (local_dev != 0 && PCI_DEV(bdf) != 0) {
 			/*
 			 * If local dev is not 0, the first other dev can
 			 * only be 0
 			 */
-			return 1;
+			return 0;
 		}
 	}
 
-	writel(PCIE_CONF_ADDR(dev, offset), pcie->base + PCIE_CONF_ADDR_OFF);
-	writel(val, pcie->base + PCIE_CONF_DATA_OFF);
+	writel(PCIE_CONF_ADDR(bdf, offset), pcie->base + PCIE_CONF_ADDR_OFF);
+	data = pci_conv_size_to_32(0, value, offset, size);
+	writel(data, pcie->base + PCIE_CONF_DATA_OFF);
 
 	return 0;
 }
@@ -331,107 +342,197 @@ static void mvebu_pcie_setup_wins(struct mvebu_pcie *pcie)
 	       pcie->base + PCIE_BAR_CTRL_OFF(1));
 }
 
-void pci_init_board(void)
+/**
+ * pcie_dw_mvebu_probe() - Probe the PCIe bus for active link
+ *
+ * @dev: A pointer to the device being operated on
+ *
+ * Probe for an active link on the PCIe bus and configure the controller
+ * to enable this port.
+ *
+ * Return: 0 on success, else -ENODEV
+ */
+static int mvebu_pcie_probe(struct udevice *dev)
 {
-	int mem_target, mem_attr, i;
-	int bus = 0;
+	struct mvebu_pcie *pcie = dev_get_platdata(dev);
+	struct udevice *ctlr = pci_get_controller(dev);
+	struct pci_controller *hose = dev_get_uclass_priv(ctlr);
+	static int bus;
 	u32 reg;
-	u32 soc_ctrl = readl(MVEBU_SYSTEM_REG_BASE + 0x4);
 
-	/* Check SoC Control Power State */
-	debug("%s: SoC Control %08x, 0en %01lx, 1en %01lx, 2en %01lx\n",
-	      __func__, soc_ctrl, SELECT(soc_ctrl, 0), SELECT(soc_ctrl, 1),
-	      SELECT(soc_ctrl, 2));
+	debug("%s: PCIe %d.%d - up, base %08x\n", __func__,
+	      pcie->port, pcie->lane, (u32)pcie->base);
 
-	for (i = 0; i < MAX_PEX; i++) {
-		struct mvebu_pcie *pcie = &pcie_bus[i];
-		struct pci_controller *hose = &pcie->hose;
+	/* Read Id info and local bus/dev */
+	debug("direct conf read %08x, local bus %d, local dev %d\n",
+	      readl(pcie->base), mvebu_pcie_get_local_bus_nr(pcie),
+	      mvebu_pcie_get_local_dev_nr(pcie));
+
+	mvebu_pcie_set_local_bus_nr(pcie, bus);
+	mvebu_pcie_set_local_dev_nr(pcie, 0);
+	pcie->dev = PCI_BDF(bus, 0, 0);
+
+	pcie->mem.start = (u32)mvebu_pcie_membase;
+	pcie->mem.end = pcie->mem.start + PCIE_MEM_SIZE - 1;
+	mvebu_pcie_membase += PCIE_MEM_SIZE;
+
+	if (mvebu_mbus_add_window_by_id(pcie->mem_target, pcie->mem_attr,
+					(phys_addr_t)pcie->mem.start,
+					PCIE_MEM_SIZE)) {
+		printf("PCIe unable to add mbus window for mem at %08x+%08x\n",
+		       (u32)pcie->mem.start, PCIE_MEM_SIZE);
+	}
+
+	/* Setup windows and configure host bridge */
+	mvebu_pcie_setup_wins(pcie);
+
+	/* Master + slave enable. */
+	reg = readl(pcie->base + PCIE_CMD_OFF);
+	reg |= PCI_COMMAND_MEMORY;
+	reg |= PCI_COMMAND_MASTER;
+	reg |= BIT(10);		/* disable interrupts */
+	writel(reg, pcie->base + PCIE_CMD_OFF);
+
+	/* Set BAR0 to internal registers */
+	writel(SOC_REGS_PHY_BASE, pcie->base + PCIE_BAR_LO_OFF(0));
+	writel(0, pcie->base + PCIE_BAR_HI_OFF(0));
+
+	/* PCI memory space */
+	pci_set_region(hose->regions + 0, pcie->mem.start,
+		       pcie->mem.start, PCIE_MEM_SIZE, PCI_REGION_MEM);
+	pci_set_region(hose->regions + 1,
+		       0, 0,
+		       gd->ram_size,
+		       PCI_REGION_MEM | PCI_REGION_SYS_MEMORY);
+	hose->region_count = 2;
+
+	bus++;
+
+	return 0;
+}
+
+static const struct dm_pci_ops mvebu_pcie_ops = {
+	.read_config	= mvebu_pcie_read_config,
+	.write_config	= mvebu_pcie_write_config,
+};
+
+static struct driver pcie_mvebu_drv = {
+	.name			= "pcie_mvebu",
+	.id			= UCLASS_PCI,
+	.ops			= &mvebu_pcie_ops,
+	.probe			= mvebu_pcie_probe,
+	.platdata_auto_alloc_size = sizeof(struct mvebu_pcie),
+};
+
+static int mvebu_pcie_port_parse_dt(ofnode node, struct mvebu_pcie *pcie)
+{
+	const u32 *addr;
+	int len;
+
+	addr = ofnode_get_property(node, "assigned-addresses", &len);
+	if (!addr) {
+		pr_err("property \"assigned-addresses\" not found");
+		return -FDT_ERR_NOTFOUND;
+	}
+
+	pcie->base = (void *)(fdt32_to_cpu(addr[2]) + SOC_REGS_PHY_BASE);
+
+	return 0;
+}
+
+/*
+ * Use a MISC device to bind the n instances (child nodes) of the
+ * PCIe base controller in UCLASS_PCI.
+ */
+static int mvebu_pcie_bind(struct udevice *parent)
+{
+	struct mvebu_pcie *pcie;
+	struct uclass_driver *drv;
+	struct udevice *dev;
+	ofnode subnode;
+	u32 soc_ctrl;
+	int port = 0;
+	int i = 0;
+	int ret;
+
+	soc_ctrl = readl(MVEBU_SYSTEM_REG_BASE + 0x4);
+
+	/* Lookup eth driver */
+	drv = lists_uclass_lookup(UCLASS_PCI);
+	if (!drv) {
+		puts("Cannot find PCI driver\n");
+		return -ENOENT;
+	}
+
+	ofnode_for_each_subnode(subnode, dev_ofnode(parent)) {
+		pcie = calloc(1, sizeof(*pcie));
+		if (!pcie)
+			return -ENOMEM;
 
 		/* Get port number, lane number and memory target / attr */
-		mvebu_get_port_lane(pcie, i, &mem_target, &mem_attr);
+		mvebu_get_port_lane(pcie, i,
+				    &pcie->mem_target, &pcie->mem_attr);
 
 		/* Don't read at all from pci registers if port power is down */
 		if (SELECT(soc_ctrl, pcie->port) == 0) {
 			if (pcie->lane == 0)
-				debug("%s: skipping port %d\n", __func__, pcie->port);
+				debug("%s: skipping port %d\n", __func__,
+				      pcie->port);
+			i++;
+			free(pcie);
 			continue;
 		}
 
-		pcie->base = (void __iomem *)PCIE_BASE(i);
+		/* Parse PCIe controller register base from DT */
+		ret = mvebu_pcie_port_parse_dt(subnode, pcie);
+		if (ret < 0) {
+			i++;
+			free(pcie);
+			continue;
+		}
 
 		/* Check link and skip ports that have no link */
 		if (!mvebu_pcie_link_up(pcie)) {
 			debug("%s: PCIe %d.%d - down\n", __func__,
 			      pcie->port, pcie->lane);
+
+			i++;
+			free(pcie);
 			continue;
 		}
-		debug("%s: PCIe %d.%d - up, base %08x\n", __func__,
-		      pcie->port, pcie->lane, (u32)pcie->base);
 
-		/* Read Id info and local bus/dev */
-		debug("direct conf read %08x, local bus %d, local dev %d\n",
-		      readl(pcie->base), mvebu_pcie_get_local_bus_nr(pcie),
-		      mvebu_pcie_get_local_dev_nr(pcie));
+		sprintf(pcie->name, "pcie%d.%d", pcie->port, pcie->lane);
 
-		mvebu_pcie_set_local_bus_nr(pcie, bus);
-		mvebu_pcie_set_local_dev_nr(pcie, 0);
-		pcie->dev = PCI_BDF(bus, 0, 0);
-
-		pcie->mem.start = (u32)mvebu_pcie_membase;
-		pcie->mem.end = pcie->mem.start + PCIE_MEM_SIZE - 1;
-		mvebu_pcie_membase += PCIE_MEM_SIZE;
-
-		if (mvebu_mbus_add_window_by_id(mem_target, mem_attr,
-						(phys_addr_t)pcie->mem.start,
-						PCIE_MEM_SIZE)) {
-			printf("PCIe unable to add mbus window for mem at %08x+%08x\n",
-			       (u32)pcie->mem.start, PCIE_MEM_SIZE);
-		}
-
-		/* Setup windows and configure host bridge */
-		mvebu_pcie_setup_wins(pcie);
-
-		/* Master + slave enable. */
-		reg = readl(pcie->base + PCIE_CMD_OFF);
-		reg |= PCI_COMMAND_MEMORY;
-		reg |= PCI_COMMAND_MASTER;
-		reg |= BIT(10);		/* disable interrupts */
-		writel(reg, pcie->base + PCIE_CMD_OFF);
-
-		/* Setup U-Boot PCI Controller */
-		hose->first_busno = 0;
-		hose->current_busno = bus;
-
-		/* PCI memory space */
-		pci_set_region(hose->regions + 0, pcie->mem.start,
-			       pcie->mem.start, PCIE_MEM_SIZE, PCI_REGION_MEM);
-		pci_set_region(hose->regions + 1,
-			       0, 0,
-			       gd->ram_size,
-			       PCI_REGION_MEM | PCI_REGION_SYS_MEMORY);
-		hose->region_count = 2;
-
-		pci_set_ops(hose,
-			    pci_hose_read_config_byte_via_dword,
-			    pci_hose_read_config_word_via_dword,
-			    mvebu_pcie_read_config_dword,
-			    pci_hose_write_config_byte_via_dword,
-			    pci_hose_write_config_word_via_dword,
-			    mvebu_pcie_write_config_dword);
-		pci_register_hose(hose);
-
-		hose->last_busno = pci_hose_scan(hose);
-
-		/* Set BAR0 to internal registers */
-		writel(SOC_REGS_PHY_BASE, pcie->base + PCIE_BAR_LO_OFF(0));
-		writel(0, pcie->base + PCIE_BAR_HI_OFF(0));
-
-		bus = hose->last_busno + 1;
+		/* Create child device UCLASS_PCI and bind it */
+		device_bind_ofnode(parent, &pcie_mvebu_drv, pcie->name, pcie,
+				   subnode, &dev);
 
 		/* need to skip more for X4 links, otherwise scan will hang */
 		if (mvebu_soc_family() == MVEBU_SOC_AXP) {
-			if (mvebu_pex_unit_is_x4(i))
+			if (mvebu_pex_unit_is_x4(i)) {
+				subnode = ofnode_next_subnode(subnode);
+				subnode = ofnode_next_subnode(subnode);
+				subnode = ofnode_next_subnode(subnode);
 				i += 3;
+			}
 		}
+
+		i++;
+		port++;
 	}
+
+	return 0;
 }
+
+static const struct udevice_id mvebu_pcie_ids[] = {
+	{ .compatible = "marvell,armada-xp-pcie" },
+	{ .compatible = "marvell,armada-370-pcie" },
+	{ }
+};
+
+U_BOOT_DRIVER(pcie_mvebu_base) = {
+	.name			= "pcie_mvebu_base",
+	.id			= UCLASS_MISC,
+	.of_match		= mvebu_pcie_ids,
+	.bind			= mvebu_pcie_bind,
+};
