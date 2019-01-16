@@ -89,7 +89,7 @@
 		 */
 		pcie-controller {
 			compatible = "marvell,armada-xp-pcie";
-			status = "disabled";
+			status = "okay";
 			device_type = "pci";
 
 			#address-cells = <3>;

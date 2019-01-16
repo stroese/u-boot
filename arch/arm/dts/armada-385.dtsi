@@ -78,7 +78,7 @@
 
 		pcie-controller {
 			compatible = "marvell,armada-370-pcie";
-			status = "disabled";
+			status = "enabled";
 			device_type = "pci";
 
 			#address-cells = <3>;
