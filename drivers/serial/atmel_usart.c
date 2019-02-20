@@ -218,6 +218,17 @@ static const struct dm_serial_ops atmel_serial_ops = {
 	.setbrg = atmel_serial_setbrg,
 };
 
+#ifdef CONFIG_SPL_BUILD
+static int atmel_serial_enable_clk(struct udevice *dev)
+{
+	struct atmel_serial_priv *priv = dev_get_priv(dev);
+
+	/* Use fixed clock value in SPL */
+	priv->usart_clk_rate = 132096000;
+
+	return 0;
+}
+#else
 static int atmel_serial_enable_clk(struct udevice *dev)
 {
 	struct atmel_serial_priv *priv = dev_get_priv(dev);
@@ -245,6 +256,7 @@ static int atmel_serial_enable_clk(struct udevice *dev)
 
 	return 0;
 }
+#endif
 
 static int atmel_serial_probe(struct udevice *dev)
 {
