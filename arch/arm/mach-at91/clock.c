@@ -5,6 +5,8 @@
  */
 
 #include <common.h>
+#include <dm.h>
+#include <wdt.h>
 #include <asm/io.h>
 #include <asm/arch/hardware.h>
 #include <asm/arch/at91_pmc.h>
@@ -118,3 +120,42 @@ void at91_pllicpr_init(u32 icpr)
 
 	writel(icpr, &pmc->pllicpr);
 }
+
+#if defined(CONFIG_WATCHDOG) && !defined(CONFIG_SPL_BUILD)
+static struct udevice *watchdog_dev;
+
+/* Called by macro WATCHDOG_RESET */
+void watchdog_reset(void)
+{
+	static ulong next_reset;
+	ulong now;
+
+	if (!watchdog_dev)
+		return;
+
+	now = get_timer(0);
+
+	/* Do not reset the watchdog too often */
+	if (now > next_reset) {
+		next_reset = now + 1000;	/* reset every 1000ms */
+		wdt_reset(watchdog_dev);
+	}
+}
+
+int arch_misc_init(void)
+{
+	/* Init watchdog */
+	if (uclass_get_device_by_seq(UCLASS_WDT, 0, &watchdog_dev)) {
+		debug("Watchdog: Not found by seq!\n");
+		if (uclass_get_device(UCLASS_WDT, 0, &watchdog_dev)) {
+			puts("Watchdog: Not found!\n");
+			return 0;
+		}
+	}
+
+	wdt_start(watchdog_dev, 16000, 0);	/* 16 seconds is max */
+	printf("Watchdog: Started\n");
+
+	return 0;
+}
+#endif
