@@ -110,3 +110,7 @@
 		reg = <1>;
 	};
 };
+
+&watchdog {
+	timeout-sec = <50>;
+};
