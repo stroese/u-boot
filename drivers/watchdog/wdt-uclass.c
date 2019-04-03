@@ -125,12 +125,9 @@ static int wdt_post_bind(struct udevice *dev)
 	 * Init watchdog: This will call the probe function of the
 	 * watchdog driver, enabling the use of the device
 	 */
-	if (uclass_get_device_by_seq(UCLASS_WDT, 0, &watchdog_dev)) {
-		debug("Watchdog: Not found by seq!\n");
-		if (uclass_get_device(UCLASS_WDT, 0, &watchdog_dev)) {
-			printf("Watchdog: Not found!\n");
-			return 0;
-		}
+	if (uclass_get_device(UCLASS_WDT, 0, &watchdog_dev)) {
+		debug("Watchdog: Not found!\n");
+		return 0;
 	}
 
 #if CONFIG_IS_ENABLED(OF_CONTROL)
