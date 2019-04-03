@@ -63,8 +63,36 @@ int wdt_expire_now(struct udevice *dev, ulong flags)
 	return ret;
 }
 
+#ifdef CONFIG_WATCHDOG
+#ifndef WDT_DEFAULT_TIMEOUT
+#define WDT_DEFAULT_TIMEOUT	60
+#endif
+
+static struct udevice *watchdog_dev __attribute__((section(".data"))) = NULL;
+
+/* Called by macro WATCHDOG_RESET */
+void watchdog_reset(void)
+{
+	static ulong next_reset;
+	ulong now;
+
+	if (!watchdog_dev)
+		return;
+
+	now = get_timer(0);
+
+	/* Do not reset the watchdog too often */
+	if (now > next_reset) {
+		next_reset = now + 1000;	/* reset every 1000ms */
+		wdt_reset(watchdog_dev);
+	}
+}
+#endif
+
 static int wdt_post_bind(struct udevice *dev)
 {
+	u32 timeout = WDT_DEFAULT_TIMEOUT;
+
 #if defined(CONFIG_NEEDS_MANUAL_RELOC)
 	struct wdt_ops *ops = (struct wdt_ops *)device_get_ops(dev);
 	static int reloc_done;
@@ -82,6 +110,39 @@ static int wdt_post_bind(struct udevice *dev)
 		reloc_done++;
 	}
 #endif
+
+#ifdef CONFIG_WATCHDOG
+	/*
+	 * Use only the first watchdog device in U-Boot to trigger the
+	 * watchdog reset
+	 */
+	if (watchdog_dev) {
+		debug("Only one watchdog device used!\n");
+		return 0;
+	}
+
+	/*
+	 * Init watchdog: This will call the probe function of the
+	 * watchdog driver, enabling the use of the device
+	 */
+	if (uclass_get_device_by_seq(UCLASS_WDT, 0, &watchdog_dev)) {
+		debug("Watchdog: Not found by seq!\n");
+		if (uclass_get_device(UCLASS_WDT, 0, &watchdog_dev)) {
+			printf("Watchdog: Not found!\n");
+			return 0;
+		}
+	}
+
+#if CONFIG_IS_ENABLED(OF_CONTROL)
+	timeout = dev_read_u32_default(watchdog_dev, "timeout-sec",
+				       WDT_DEFAULT_TIMEOUT);
+	debug("%s: timeout %d\n", __func__, timeout);
+#endif
+
+	wdt_start(watchdog_dev, timeout * 1000, 0);
+	printf("WDT:   Started (%ds timeout)\n", timeout);
+#endif
+
 	return 0;
 }
 
