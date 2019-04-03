@@ -69,6 +69,7 @@ int print_cpuinfo(void)
 	return 0;
 }
 
+#if 0
 #ifdef CONFIG_WATCHDOG
 static struct udevice *watchdog_dev __attribute__((section(".data"))) = NULL;
 
@@ -90,6 +91,7 @@ void watchdog_reset(void)
 	}
 }
 #endif
+#endif
 
 int arch_misc_init(void)
 {
@@ -103,6 +105,7 @@ int arch_misc_init(void)
 	flush_dcache_range(gd->bd->bi_memstart,
 			   gd->bd->bi_memstart + gd->ram_size - 1);
 
+#if 0
 #ifdef CONFIG_WATCHDOG
 	/* Init watchdog */
 	if (uclass_get_device_by_seq(UCLASS_WDT, 0, &watchdog_dev)) {
@@ -115,6 +118,7 @@ int arch_misc_init(void)
 
 	wdt_start(watchdog_dev, 60000, 0);	/* 60 seconds */
 	printf("Watchdog: Started\n");
+#endif
 #endif
 
 	return 0;
