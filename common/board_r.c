@@ -48,6 +48,7 @@
 #include <linux/compiler.h>
 #include <linux/err.h>
 #include <efi_loader.h>
+#include <wdt.h>
 
 DECLARE_GLOBAL_DATA_PTR;
 
@@ -621,6 +622,42 @@ static int initr_bedbug(void)
 }
 #endif
 
+#if defined(CONFIG_WATCHDOG) && defined(CONFIG_WDT)
+#ifndef WDT_DEFAULT_TIMEOUT
+#define WDT_DEFAULT_TIMEOUT	60
+#endif
+
+static int initr_watchdog(void)
+{
+	u32 timeout = WDT_DEFAULT_TIMEOUT;
+
+	/*
+	 * Init watchdog: This will call the probe function of the
+	 * watchdog driver, enabling the use of the device
+	 */
+	if (uclass_get_device_by_seq(UCLASS_WDT, 0,
+				     (struct udevice **)&gd->watchdog_dev)) {
+		debug("WDT:   Not found by seq!\n");
+		if (uclass_get_device(UCLASS_WDT, 0,
+				      (struct udevice **)&gd->watchdog_dev)) {
+			printf("WDT:   Not found!\n");
+			return 0;
+		}
+	}
+
+	if (CONFIG_IS_ENABLED(OF_CONTROL)) {
+		timeout = dev_read_u32_default(gd->watchdog_dev, "timeout-sec",
+					       WDT_DEFAULT_TIMEOUT);
+	}
+
+	wdt_start(gd->watchdog_dev, timeout * 1000, 0);
+	gd->flags |= GD_FLG_WDT_READY;
+	printf("WDT:   Started (%ds timeout)\n", timeout);
+
+	return 0;
+}
+#endif
+
 static int run_main_loop(void)
 {
 #ifdef CONFIG_SANDBOX
@@ -669,6 +706,9 @@ static init_fnc_t init_sequence_r[] = {
 #endif
 #ifdef CONFIG_DM
 	initr_dm,
+#endif
+#if defined(CONFIG_WATCHDOG) && defined(CONFIG_WDT)
+	initr_watchdog,
 #endif
 #if defined(CONFIG_ARM) || defined(CONFIG_NDS32) || defined(CONFIG_RISCV) || \
 	defined(CONFIG_SANDBOX)
