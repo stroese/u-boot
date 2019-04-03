@@ -10,6 +10,10 @@
 #include <dm/device-internal.h>
 #include <dm/lists.h>
 
+#ifndef WDT_DEFAULT_TIMEOUT
+#define WDT_DEFAULT_TIMEOUT	60
+#endif
+
 int wdt_start(struct udevice *dev, u64 timeout_ms, ulong flags)
 {
 	const struct wdt_ops *ops = device_get_ops(dev);
@@ -64,10 +68,6 @@ int wdt_expire_now(struct udevice *dev, ulong flags)
 }
 
 #ifdef CONFIG_WATCHDOG
-#ifndef WDT_DEFAULT_TIMEOUT
-#define WDT_DEFAULT_TIMEOUT	60
-#endif
-
 static struct udevice *watchdog_dev __attribute__((section(".data"))) = NULL;
 
 /* Called by macro WATCHDOG_RESET */
@@ -91,7 +91,7 @@ void watchdog_reset(void)
 
 static int wdt_post_bind(struct udevice *dev)
 {
-	u32 timeout = WDT_DEFAULT_TIMEOUT;
+	u32 __maybe_unused timeout = WDT_DEFAULT_TIMEOUT;
 
 #if defined(CONFIG_NEEDS_MANUAL_RELOC)
 	struct wdt_ops *ops = (struct wdt_ops *)device_get_ops(dev);
