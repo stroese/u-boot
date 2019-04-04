@@ -14,6 +14,8 @@
 #define WDT_DEFAULT_TIMEOUT	60
 #endif
 
+DECLARE_GLOBAL_DATA_PTR;
+
 int wdt_start(struct udevice *dev, u64 timeout_ms, ulong flags)
 {
 	const struct wdt_ops *ops = device_get_ops(dev);
@@ -68,23 +70,25 @@ int wdt_expire_now(struct udevice *dev, ulong flags)
 }
 
 #ifdef CONFIG_WATCHDOG
-static struct udevice *watchdog_dev __attribute__((section(".data"))) = NULL;
-
-/* Called by macro WATCHDOG_RESET */
+/*
+ * Called by macro WATCHDOG_RESET. This function be called *very* early,
+ * so we need to make sure, that the watchdog driver is ready before using
+ * it in this function.
+ */
 void watchdog_reset(void)
 {
 	static ulong next_reset;
 	ulong now;
 
-	if (!watchdog_dev)
+	/* Exit if GD is not ready or watchdog is not initialized yet */
+	if (!gd || !(gd->flags & GD_FLG_WDT_READY))
 		return;
 
-	now = get_timer(0);
-
 	/* Do not reset the watchdog too often */
+	now = get_timer(0);
 	if (now > next_reset) {
 		next_reset = now + 1000;	/* reset every 1000ms */
-		wdt_reset(watchdog_dev);
+		wdt_reset(gd->watchdog_dev);
 	}
 }
 #endif
@@ -116,7 +120,7 @@ static int wdt_post_bind(struct udevice *dev)
 	 * Use only the first watchdog device in U-Boot to trigger the
 	 * watchdog reset
 	 */
-	if (watchdog_dev) {
+	if (gd->watchdog_dev) {
 		debug("Only one watchdog device used!\n");
 		return 0;
 	}
@@ -125,18 +129,19 @@ static int wdt_post_bind(struct udevice *dev)
 	 * Init watchdog: This will call the probe function of the
 	 * watchdog driver, enabling the use of the device
 	 */
-	if (uclass_get_device(UCLASS_WDT, 0, &watchdog_dev)) {
+	if (uclass_get_device(UCLASS_WDT, 0,
+			      (struct udevice **)&gd->watchdog_dev)) {
 		debug("Watchdog: Not found!\n");
 		return 0;
 	}
 
 #if CONFIG_IS_ENABLED(OF_CONTROL)
-	timeout = dev_read_u32_default(watchdog_dev, "timeout-sec",
+	timeout = dev_read_u32_default(gd->watchdog_dev, "timeout-sec",
 				       WDT_DEFAULT_TIMEOUT);
-	debug("%s: timeout %d\n", __func__, timeout);
 #endif
 
-	wdt_start(watchdog_dev, timeout * 1000, 0);
+	wdt_start(gd->watchdog_dev, timeout * 1000, 0);
+	gd->flags |= GD_FLG_WDT_READY;
 	printf("WDT:   Started (%ds timeout)\n", timeout);
 #endif
 
