@@ -10,6 +10,7 @@
 #include <dm.h>
 #include <wdt.h>
 #include <clk.h>
+#include <div64.h>
 #include <linux/io.h>
 
 DECLARE_GLOBAL_DATA_PTR;
@@ -141,7 +142,8 @@ static int cdns_wdt_start(struct udevice *dev, u64 timeout, ulong flags)
 		return -1;
 	}
 
-	/* Restrict timeout to min and max value */
+	/* Calculate timeout in seconds and restrict to min and max value */
+	do_div(timeout, 1000);
 	timeout = max_t(u64, timeout, CDNS_WDT_MIN_TIMEOUT);
 	timeout = min_t(u64, timeout, CDNS_WDT_MAX_TIMEOUT);
 
