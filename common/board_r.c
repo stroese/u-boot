@@ -622,9 +622,13 @@ static int initr_bedbug(void)
 }
 #endif
 
-#if defined(CONFIG_WATCHDOG) && defined(CONFIG_WDT)
+#if defined(CONFIG_WDT)
 #ifndef WDT_DEFAULT_TIMEOUT
 #define WDT_DEFAULT_TIMEOUT	60
+#endif
+
+#if !defined(CONFIG_WATCHDOG)
+#error "WATCHDOG define error"
 #endif
 
 static int initr_watchdog(void)
