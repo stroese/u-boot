@@ -13,6 +13,8 @@
 #define SECS_TO_WDOG_TICKS(x) ((x) << 16)
 #define MAX_TIMEOUT   0xf /* ~15s */
 
+#error BBB
+
 static __efi_runtime_data bool enabled = true;
 
 extern void reset_cpu(ulong ticks);

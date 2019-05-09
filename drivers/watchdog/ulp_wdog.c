@@ -7,6 +7,8 @@
 #include <asm/io.h>
 #include <asm/arch/imx-regs.h>
 
+#error AAA
+
 /*
  * MX7ULP WDOG Register Map
  */
