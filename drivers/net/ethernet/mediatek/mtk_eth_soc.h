@@ -35,7 +35,8 @@
 				 NETIF_F_SG | NETIF_F_TSO | \
 				 NETIF_F_TSO6 | \
 				 NETIF_F_IPV6_CSUM)
-#define NEXT_RX_DESP_IDX(X, Y)	(((X) + 1) & ((Y) - 1))
+#define MTK_HW_FEATURES_MT7628	(NETIF_F_SG | NETIF_F_RXCSUM)
+#define NEXT_DESP_IDX(X, Y)	(((X) + 1) & ((Y) - 1))
 
 #define MTK_MAX_RX_RING_NUM	4
 #define MTK_HW_LRO_DMA_SIZE	8
@@ -114,6 +115,7 @@
 /* PDMA Global Configuration Register */
 #define MTK_PDMA_GLO_CFG	0xa04
 #define MTK_MULTI_EN		BIT(10)
+#define MTK_PDMA_SIZE_8DWORDS	(1 << 4)
 
 /* PDMA Reset Index Register */
 #define MTK_PDMA_RST_IDX	0xa08
@@ -272,11 +274,18 @@
 #define TX_DMA_OWNER_CPU	BIT(31)
 #define TX_DMA_LS0		BIT(30)
 #define TX_DMA_PLEN0(_x)	(((_x) & MTK_TX_DMA_BUF_LEN) << 16)
+#define TX_DMA_PLEN1(_x)	((_x) & MTK_TX_DMA_BUF_LEN)
 #define TX_DMA_SWC		BIT(14)
 #define TX_DMA_SDL(_x)		(((_x) & 0x3fff) << 16)
 
+/* PDMA on MT7628 */
+#define TX_DMA_DONE		BIT(31)
+#define TX_DMA_LS1		BIT(14)
+#define TX_DMA_DESP2_DEF	(TX_DMA_LS0 | TX_DMA_DONE)
+
 /* QDMA descriptor rxd2 */
 #define RX_DMA_DONE		BIT(31)
+#define RX_DMA_LSO		BIT(30)
 #define RX_DMA_PLEN0(_x)	(((_x) & 0x3fff) << 16)
 #define RX_DMA_GET_PLEN0(_x)	(((_x) >> 16) & 0x3fff)
 
@@ -285,6 +294,7 @@
 
 /* QDMA descriptor rxd4 */
 #define RX_DMA_L4_VALID		BIT(24)
+#define RX_DMA_L4_VALID_PDMA	BIT(30)		/* when PDMA is used */
 #define RX_DMA_FPORT_SHIFT	19
 #define RX_DMA_FPORT_MASK	0x7
 
@@ -393,6 +403,19 @@
 #define SGMSYS_QPHY_PWR_STATE_CTRL 0xe8
 #define	SGMII_PHYA_PWD		BIT(4)
 
+/* MT7628/88 specific stuff */
+#define MT7628_PDMA_OFFSET	0x0800
+#define MT7628_SDM_OFFSET	0x0c00
+
+#define MT7628_TX_BASE_PTR0	(MT7628_PDMA_OFFSET + 0x00)
+#define MT7628_TX_MAX_CNT0	(MT7628_PDMA_OFFSET + 0x04)
+#define MT7628_TX_CTX_IDX0	(MT7628_PDMA_OFFSET + 0x08)
+#define MT7628_TX_DTX_IDX0	(MT7628_PDMA_OFFSET + 0x0c)
+#define MT7628_PST_DTX_IDX0	BIT(0)
+
+#define MT7628_SDM_MAC_ADRL	(MT7628_SDM_OFFSET + 0x0c)
+#define MT7628_SDM_MAC_ADRH	(MT7628_SDM_OFFSET + 0x10)
+
 struct mtk_rx_dma {
 	unsigned int rxd1;
 	unsigned int rxd2;
@@ -484,6 +507,7 @@ enum mtk_clks_map {
 				 BIT(MTK_CLK_SGMII_CK) | \
 				 BIT(MTK_CLK_ETH2PLL))
 #define MT7621_CLKS_BITMAP	(0)
+#define MT7628_CLKS_BITMAP	(0)
 
 enum mtk_dev_state {
 	MTK_HW_INIT,
@@ -525,6 +549,10 @@ struct mtk_tx_ring {
 	struct mtk_tx_dma *last_free;
 	u16 thresh;
 	atomic_t free_count;
+	int dma_size;
+	struct mtk_tx_dma *dma_pdma;	/* For MT7628/88 PDMA handling */
+	dma_addr_t phys_pdma;
+	int cpu_idx;
 };
 
 /* PDMA rx ring mode */
@@ -565,11 +593,13 @@ struct mtk_rx_ring {
 					 MTK_GMAC2_SGMII)
 #define MTK_HWLRO			BIT(12)
 #define MTK_SHARED_INT			BIT(13)
+#define MTK_SOC_MT7628			BIT(14)
 #define MTK_HAS_CAPS(caps, _x)		(((caps) & (_x)) == (_x))
 
 /* struct mtk_eth_data -	This is the structure holding all differences
  *				among various plaforms
  * @caps			Flags shown the extra capability for the SoC
+ * @hw_features			Flags shown HW features
  * @required_clks		Flags shown the bitmap for required clocks on
  *				the target SoC
  * @required_pctl		A bool value to show whether the SoC requires
@@ -579,6 +609,7 @@ struct mtk_soc_data {
 	u32		caps;
 	u32		required_clks;
 	bool		required_pctl;
+	netdev_features_t hw_features;
 };
 
 /* currently no SoC has more than 2 macs */
@@ -651,6 +682,10 @@ struct mtk_eth {
 	unsigned long			state;
 
 	const struct mtk_soc_data	*soc;
+
+	u32				tx_int_mask_reg;
+	u32				rx_dma_l4_valid;
+	int				ip_align;
 };
 
 /* struct mtk_mac -	the structure that holds the info about the MACs of the
