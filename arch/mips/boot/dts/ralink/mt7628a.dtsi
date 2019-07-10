@@ -288,20 +288,25 @@
 
 // test-only: not for upstream yet!!!!!!!!!!!!!!!!!!!
 	ethernet: ethernet@10100000 {
-		compatible = "ralink,rt5350-eth";
+		compatible = "mediatek,mt7628-eth";
 		reg = <0x10100000 0x10000>;
+
+		#address-cells = <1>;
+		#size-cells = <0>;
 
 		interrupt-parent = <&cpuintc>;
 		interrupts = <5>;
 
-		resets = <&resetc 21 &resetc 23>;
-		reset-names = "fe", "esw";
+//		resets = <&resetc 21 &resetc 23>;
+//		reset-names = "fe", "esw";
+		resets = <&resetc 21>;
+		reset-names = "fe";
 
-		mediatek,switch = <&esw>;
+		status = "disabled";
 	};
 
 	esw: esw@10110000 {
-		compatible = "mediatek,mt7628-esw", "ralink,rt3050-esw";
+		compatible = "mediatek,mt7628-esw";
 		reg = <0x10110000 0x8000>;
 
 		resets = <&resetc 23>;
