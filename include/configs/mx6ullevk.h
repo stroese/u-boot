@@ -24,7 +24,9 @@
 /* Size of malloc() pool */
 #define CONFIG_SYS_MALLOC_LEN		(16 * SZ_1M)
 
+#if 0
 #define CONFIG_MXC_UART
+#endif
 #define CONFIG_MXC_UART_BASE		UART1_BASE
 
 /* MMC Configs */
@@ -37,6 +39,14 @@
 #else
 #define CONFIG_SYS_FSL_USDHC_NUM	2
 #endif
+#endif
+
+/* USB Configs */
+#ifdef CONFIG_CMD_USB
+#define CONFIG_EHCI_HCD_INIT_AFTER_RESET
+#define CONFIG_MXC_USB_PORTSC  (PORT_PTS_UTMI | PORT_PTS_PTW)
+#define CONFIG_MXC_USB_FLAGS   0
+#define CONFIG_USB_MAX_CONTROLLER_COUNT 2
 #endif
 
 /* I2C configs */
@@ -162,6 +172,12 @@
 
 #define CONFIG_ENV_SIZE			SZ_8K
 #define CONFIG_ENV_OFFSET		(12 * SZ_64K)
+
+#if defined(CONFIG_ENV_IS_IN_SPI_FLASH)
+#undef CONFIG_ENV_OFFSET
+#define CONFIG_ENV_OFFSET               (1024 * 1024)
+#define CONFIG_ENV_SECT_SIZE            (4 * 1024)
+#endif
 
 #define CONFIG_IMX_THERMAL
 
