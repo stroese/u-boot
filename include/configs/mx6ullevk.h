@@ -183,7 +183,9 @@
 
 #define CONFIG_IOMUX_LPSR
 
+#if 0
 #define CONFIG_SOFT_SPI
+#endif
 
 #ifdef CONFIG_FSL_QSPI
 #define CONFIG_SYS_FSL_QSPI_AHB
