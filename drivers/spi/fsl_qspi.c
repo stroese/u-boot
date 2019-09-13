@@ -48,8 +48,8 @@
 
 #include <spi.h>
 #include <spi-mem.h>
-#define PR(fmt, ...) \
-	 fprintf(stderr, "DEBUG: %s:%d:%s(): " fmt" \n", \
+#define PR(fmt, ...)					 \
+	 printf("DEBUG: %s:%d:%s(): " fmt" \n", \
 		__FILE__, __LINE__, __func__, ##__VA_ARGS__)
 DECLARE_GLOBAL_DATA_PTR;
 
