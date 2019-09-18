@@ -183,6 +183,9 @@
 
 #define CONFIG_IOMUX_LPSR
 
+#define CONFIG_SPL_PAD_TO		0x1f000
+#define CONFIG_SYS_MONITOR_LEN		(512 << 10)
+
 #if 0
 #define CONFIG_SOFT_SPI
 #endif
