@@ -65,8 +65,7 @@ int board_init(void)
 	/* Address of boot parameters */
 	gd->bd->bi_boot_params = PHYS_SDRAM + 0x100;
 
-#if 1 // test-only
-	// test-only: is this one needed when booting via QSPI?
+#ifdef CONFIG_FSL_QSPI
 	/* Set the clock */
 	enable_qspi_clk(0);
 #endif
@@ -314,16 +313,6 @@ void reset_cpu(ulong addr)
 	/* TODO */
 }
 
-#ifdef CONFIG_FSL_QSPI
-static int board_qspi_init(void)
-{
-	/* Set the clock */
-	enable_qspi_clk(0);
-
-	return 0;
-}
-#endif
-
 void board_init_f(ulong dummy)
 {
 	int ret;
@@ -350,13 +339,13 @@ void board_init_f(ulong dummy)
 
 	/* DDR initialization */
 	spl_dram_init();
-	printk("%s (%d)\n", __func__, __LINE__); // test-only
 
 	/* Clear the BSS. */
 	memset(__bss_start, 0, __bss_end - __bss_start);
 
 #ifdef CONFIG_FSL_QSPI
-	board_qspi_init();
+	/* Set the clock */
+	enable_qspi_clk(0);
 #endif
 
 	/* load/boot image from boot device */
