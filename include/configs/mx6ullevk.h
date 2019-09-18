@@ -175,14 +175,26 @@
 
 #if defined(CONFIG_ENV_IS_IN_SPI_FLASH)
 #undef CONFIG_ENV_OFFSET
-#define CONFIG_ENV_OFFSET               (1024 * 1024)
-#define CONFIG_ENV_SECT_SIZE            (4 * 1024)
+#undef CONFIG_ENV_SIZE
+#define CONFIG_ENV_OFFSET		0xe0000
+#define CONFIG_ENV_SECT_SIZE		(4 << 10)
+#define CONFIG_ENV_SIZE			(16 << 10)
 #endif
 
 #define CONFIG_IMX_THERMAL
 
 #define CONFIG_IOMUX_LPSR
 
+/*
+ * SPI NOR Flash layout:
+ * 0x0000.0000 - 0x0000.03ff - FPGA image information
+ * 0x0000.0400 - 0x0000.05ff - QSPI NOR description for i.MX6 BootROM
+ * 0x0000.1000 - 0x0001.ffff - SPL with IMX header (max size 0x1.f000)
+ * 0x0002.0000 - 0x0009.ffff - U-Boot (max size 0x8.0000)
+ * 0x000a.0000 - 0x000d.ffff - Reserved (for growing U-Boot etc)
+ * 0x000e.0000 - 0x000e.ffff - Environment
+ * 0x000f.0000 - 0x000f.ffff - 2nd Environment (if redundant is used)
+ */
 #define CONFIG_SPL_PAD_TO		0x1f000
 #define CONFIG_SYS_MONITOR_LEN		(512 << 10)
 
