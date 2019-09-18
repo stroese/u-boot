@@ -78,6 +78,9 @@ DECLARE_GLOBAL_DATA_PTR;
 #define QUADSPI_IPCR			0x08
 #define QUADSPI_IPCR_SEQID(x)		((x) << 24)
 
+#define QUADSPI_FLSHCR			0x0c
+#define QUADSPI_FLSHCR_TDH(x)		((x) << 16)
+
 #define QUADSPI_BUF3CR			0x1c
 #define QUADSPI_BUF3CR_ALLMST_MASK	BIT(31)
 #define QUADSPI_BUF3CR_ADATSZ(x)	((x) << 8)
@@ -825,6 +828,16 @@ static int fsl_qspi_default_setup(struct fsl_qspi *q)
 		    base + QUADSPI_SFB1AD);
 	qspi_writel(q, q->devtype_data->ahb_buf_size * 4 + addr_offset,
 		    base + QUADSPI_SFB2AD);
+
+	/*
+	 * Clear THD bits to configure SDR mode instead of DDR mode. This
+	 * might be necessary, as the BootROM in some versions and on some
+	 * SoCs sets these bits to 0x1 for DDR mode. But this driver needs
+	 * it set to SDR mode instead.
+	 */
+	reg = qspi_readl(q, base + QUADSPI_FLSHCR);
+	reg &= ~QUADSPI_FLSHCR_TDH(0x3);
+	qspi_writel(q, reg, base + QUADSPI_FLSHCR);
 
 	q->selected = -1;
 
