@@ -18,6 +18,12 @@
 				u-boot,dm-spl;
 
 				n25q256a@0 {
+					/*
+					 * Necessary for high speed QSPI
+					 * reading in U-Boot:
+					 * Without:	5.7 MiB/s
+					 * With:	20 MiB/s
+					 */
 					compatible = "jedec,spi-nor";
 				};
 			};
