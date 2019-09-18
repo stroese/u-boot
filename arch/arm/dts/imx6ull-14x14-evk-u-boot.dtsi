@@ -16,6 +16,10 @@
 
 			qspi: spi@21e0000 {
 				u-boot,dm-spl;
+
+				n25q256a@0 {
+					compatible = "jedec,spi-nor";
+				};
 			};
 		};
 	};
