@@ -4,7 +4,18 @@
  */
 
 #include <common.h>
+#include <cpu_func.h>
 #include <spl.h>
+
+#if IS_ENABLED(CONFIG_SPL_LZMA)
+#include <lzma/LzmaTypes.h>
+#include <lzma/LzmaDec.h>
+#include <lzma/LzmaTools.h>
+#endif
+
+#ifndef CONFIG_SYS_BOOTM_LEN
+#define CONFIG_SYS_BOOTM_LEN	(8 << 20)
+#endif
 
 static ulong spl_nor_load_read(struct spl_load_info *load, ulong sector,
 			       ulong count, void *buf)
@@ -27,6 +38,9 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 	int ret;
 	__maybe_unused const struct image_header *header;
 	__maybe_unused struct spl_load_info load;
+	__maybe_unused SizeT lzma_len;
+	struct image_header hdr;
+	uintptr_t dataptr;
 
 	/*
 	 * Loading of the payload to SDRAM is done with skipping of
@@ -107,14 +121,49 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 					      spl_nor_get_uboot_base());
 	}
 
-	ret = spl_parse_image_header(spl_image,
-			(const struct image_header *)spl_nor_get_uboot_base());
+	/* Payload image may not be aligned, so copy it for safety. */
+	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
+	ret = spl_parse_image_header(spl_image, &hdr);
 	if (ret)
 		return ret;
 
-	memcpy((void *)(unsigned long)spl_image->load_addr,
-	       (void *)(spl_nor_get_uboot_base() + sizeof(struct image_header)),
-	       spl_image->size);
+	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
+
+	switch (image_get_comp(&hdr)) {
+	case IH_COMP_NONE:
+		memmove((void *)(unsigned long)spl_image->load_addr,
+			(void *)dataptr, spl_image->size);
+		break;
+#if IS_ENABLED(CONFIG_SPL_LZMA)
+	case IH_COMP_LZMA:
+		lzma_len = CONFIG_SYS_BOOTM_LEN;
+
+		ret = lzmaBuffToBuffDecompress((void *)spl_image->load_addr,
+					       &lzma_len, (void *)dataptr,
+					       spl_image->size);
+
+		if (ret) {
+			printf("LZMA decompression error: %d\n", ret);
+			return ret;
+		}
+
+		spl_image->size = lzma_len;
+		break;
+#endif
+	default:
+		debug("Compression method %s is not supported\n",
+		      genimg_get_comp_short_name(image_get_comp(&hdr)));
+		return -EINVAL;
+	}
+
+	flush_cache((unsigned long)spl_image->load_addr, spl_image->size);
+
+	/*
+	 * If the image did not provide an entry point, assume the entry point
+	 * is the same as its load address.
+	 */
+	if (!spl_image->entry_point)
+		spl_image->entry_point = spl_image->load_addr;
 
 	return 0;
 }
