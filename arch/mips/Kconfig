@@ -335,6 +335,12 @@ config SPL_INIT_STACK_WITHOUT_MALLOC_F
 	  malloc space. Platform should set the malloc_base later when DRAM is
 	  ready to use.
 
+config SPL_LOADER_SUPPORT
+	bool
+	default n
+	help
+	  Enable this option if you want to use SPL loaders without DM enabled.
+
 endmenu
 
 menu "OS boot interface"
