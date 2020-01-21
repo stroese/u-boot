@@ -747,6 +747,21 @@ applications.
 
 
 
+Entry: u-boot-lzma-img: U-Boot legacy image with contents compressed by LZMA
+----------------------------------------------------------------------------
+
+Properties / Entry arguments:
+    - filename: Filename of u-boot-lzma.img (default 'u-boot-lzma.img')
+
+This is the U-Boot binary as a packaged image, in legacy format. It has a
+header which allows it to be loaded at the correct address for execution.
+Its contents are compressed by LZMA.
+
+You should use FIT (Flat Image Tree) instead of the legacy image for new
+applications.
+
+
+
 Entry: u-boot-nodtb: U-Boot flat binary without device tree appended
 --------------------------------------------------------------------
 
