@@ -897,6 +897,7 @@ ALL-$(CONFIG_OF_SEPARATE) += u-boot-dtb-tegra.bin
 endif
 
 ALL-$(CONFIG_ARCH_MEDIATEK) += u-boot-mtk.bin
+ALL-$(CONFIG_ARCH_MTMIPS) += u-boot-mtmips.bin
 
 # Add optional build target if defined in board/cpu/soc headers
 ifneq ($(CONFIG_BUILD_TARGET),)
@@ -1689,6 +1690,14 @@ MKIMAGEFLAGS_u-boot-mtk.bin = -T mtk_image \
 
 u-boot-mtk.bin: u-boot.bin FORCE
 	$(call if_changed,mkimage)
+endif
+
+ifeq ($(CONFIG_SPL),y)
+u-boot-mtmips.bin: u-boot.dtb u-boot-lzma.img spl/u-boot-spl.bin FORCE
+	$(call if_changed,binman)
+else
+u-boot-mtmips.bin: u-boot.bin FORCE
+	$(call if_changed,copy)
 endif
 
 ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(ARCH)/Makefile.postlink)
