@@ -938,6 +938,12 @@ endif
 
 ALL-$(CONFIG_ARCH_MEDIATEK) += u-boot-mtk.bin
 
+ifeq ($(CONFIG_SPL),y)
+ALL-$(CONFIG_ARCH_MTMIPS) += u-boot-with-spl.bin
+else
+ALL-$(CONFIG_ARCH_MTMIPS) += u-boot.bin
+endif
+
 # Add optional build target if defined in board/cpu/soc headers
 ifneq ($(CONFIG_BUILD_TARGET),)
 ALL-y += $(CONFIG_BUILD_TARGET:"%"=%)
