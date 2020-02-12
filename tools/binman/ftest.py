@@ -39,6 +39,7 @@ import tout
 # Contents of test files, corresponding to different entry types
 U_BOOT_DATA           = b'1234'
 U_BOOT_IMG_DATA       = b'img'
+U_BOOT_LZMA_IMG_DATA  = b'lzma-img'
 U_BOOT_SPL_DATA       = b'56780123456789abcdefghi'
 U_BOOT_TPL_DATA       = b'tpl9876543210fedcbazyw'
 BLOB_DATA             = b'89'
@@ -115,6 +116,7 @@ class TestFunctional(unittest.TestCase):
         # Create some test files
         TestFunctional._MakeInputFile('u-boot.bin', U_BOOT_DATA)
         TestFunctional._MakeInputFile('u-boot.img', U_BOOT_IMG_DATA)
+        TestFunctional._MakeInputFile('u-boot-lzma.img', U_BOOT_LZMA_IMG_DATA)
         TestFunctional._MakeInputFile('spl/u-boot-spl.bin', U_BOOT_SPL_DATA)
         TestFunctional._MakeInputFile('tpl/u-boot-tpl.bin', U_BOOT_TPL_DATA)
         TestFunctional._MakeInputFile('blobfile', BLOB_DATA)
@@ -1077,6 +1079,11 @@ class TestFunctional(unittest.TestCase):
         """Test that u-boot.img can be put in a file"""
         data = self._DoReadFile('036_u_boot_img.dts')
         self.assertEqual(U_BOOT_IMG_DATA, data)
+
+    def testUBootLzmaImg(self):
+        """Test that u-boot-lzma.img can be put in a file"""
+        data = self._DoReadFile('156_u_boot_lzma_img.dts')
+        self.assertEqual(U_BOOT_LZMA_IMG_DATA, data)
 
     def testNoMicrocode(self):
         """Test that a missing microcode region is detected"""
