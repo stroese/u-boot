@@ -554,10 +554,12 @@ int spl_load_legacy_img(struct spl_image_info *spl_image,
 	__maybe_unused void *src;
 	int ret;
 
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
 	ret = spl_parse_image_header(spl_image, header);
 	if (ret)
 		return ret;
 
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
 	switch (image_get_comp(header)) {
 	case IH_COMP_NONE:
 		info->read(info, dataptr, spl_image->size,
@@ -607,8 +609,6 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 {
 	__maybe_unused const struct image_header *header;
 	__maybe_unused struct spl_load_info load;
-	struct image_header hdr;
-	uintptr_t dataptr;
 	int ret;
 
 	/*
@@ -690,16 +690,23 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 					      spl_nor_get_uboot_base());
 	}
 
-	/* Payload image may not be aligned, so copy it for safety */
-	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
-	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
+	if (IS_ENABLED(CONFIG_SPL_LEGACY_IMAGE_SUPPORT)) {
+		struct image_header hdr;
+		uintptr_t dataptr;
 
-	/* Legacy image handling */
-	load.bl_len = 1;
-	load.read = spl_nor_load_read;
-	ret = spl_load_legacy_img(spl_image, &hdr, dataptr, &load);
+		printk("%s (%d)\n", __func__, __LINE__); // test-only
+		/* Payload image may not be aligned, so copy it for safety */
+		memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
+		dataptr = spl_nor_get_uboot_base() + sizeof(hdr);
 
-	return ret;
+		/* Legacy image handling */
+		load.bl_len = 1;
+		load.read = spl_nor_load_read;
+		return spl_load_legacy_img(spl_image, &hdr, dataptr, &load);
+	}
+
+	return 0;
 }
 SPL_LOAD_IMAGE_METHOD("NOR", 0, BOOT_DEVICE_NOR, spl_nor_load_image);
 
