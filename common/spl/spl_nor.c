@@ -24,11 +24,9 @@ unsigned long __weak spl_nor_get_uboot_base(void)
 static int spl_nor_load_image(struct spl_image_info *spl_image,
 			      struct spl_boot_device *bootdev)
 {
-	int ret;
 	__maybe_unused const struct image_header *header;
 	__maybe_unused struct spl_load_info load;
-	struct image_header hdr;
-	uintptr_t dataptr;
+	int ret;
 
 	/*
 	 * Loading of the payload to SDRAM is done with skipping of
@@ -109,17 +107,19 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 					      spl_nor_get_uboot_base());
 	}
 
-	ret = spl_parse_image_header(spl_image,
-			(const struct image_header *)spl_nor_get_uboot_base());
-	if (ret)
-		return ret;
+	if (IS_ENABLED(CONFIG_SPL_LEGACY_IMAGE_SUPPORT)) {
+		struct image_header hdr;
+		uintptr_t dataptr;
 
-	/* Payload image may not be aligned, so copy it for safety */
-	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
-	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
+		/* Payload image may not be aligned, so copy it for safety */
+		memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
+		dataptr = spl_nor_get_uboot_base() + sizeof(hdr);
 
-	memcpy((void *)(unsigned long)spl_image->load_addr,
-	       (void *)dataptr, spl_image->size);
+		/* Legacy image handling */
+		load.bl_len = 1;
+		load.read = spl_nor_load_read;
+		return spl_load_legacy_img(spl_image, &hdr, dataptr, &load);
+	}
 
 	return 0;
 }
