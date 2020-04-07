@@ -3,6 +3,7 @@
  * Copyright (C) 2018 Stefan Roese <sr@denx.de>
  */
 
+#define DEBUG
 #include <common.h>
 #include <env.h>
 #include <env_internal.h>
@@ -299,6 +300,469 @@ err_free:
 U_BOOT_CMD(
 	fd_write,	1,	0,	do_fd_write,
 	"Write test factory-data values to SPI NOR",
+	"\n"
+);
+#endif
+
+
+
+
+
+#ifndef CONFIG_SPL_BUILD
+
+
+
+#include <cpu_func.h>
+#include <spl.h>
+#if IS_ENABLED(CONFIG_SPL_LZMA)
+#include <lzma/LzmaTypes.h>
+#include <lzma/LzmaDec.h>
+#include <lzma/LzmaTools.h>
+#endif
+
+#ifndef CONFIG_SYS_BOOTM_LEN
+#define CONFIG_SYS_BOOTM_LEN	(8 << 20)
+#endif
+
+#if 0
+#ifndef CONFIG_SYS_UBOOT_START
+#define CONFIG_SYS_UBOOT_START	CONFIG_SYS_TEXT_BASE
+#endif
+#ifndef CONFIG_SYS_MONITOR_LEN
+/* Unknown U-Boot size, let's assume it will not be more than 200 KB */
+#define CONFIG_SYS_MONITOR_LEN	(200 * 1024)
+#endif
+
+void spl_set_header_raw_uboot(struct spl_image_info *spl_image)
+{
+	ulong u_boot_pos = binman_sym(ulong, u_boot_any, image_pos);
+
+	spl_image->size = CONFIG_SYS_MONITOR_LEN;
+
+	/*
+	 * Binman error cases: address of the end of the previous region or the
+	 * start of the image's entry area (usually 0) if there is no previous
+	 * region.
+	 */
+	if (u_boot_pos && u_boot_pos != BINMAN_SYM_MISSING) {
+		/* Binman does not support separated entry addresses */
+		spl_image->entry_point = u_boot_pos;
+		spl_image->load_addr = u_boot_pos;
+	} else {
+		spl_image->entry_point = CONFIG_SYS_UBOOT_START;
+		spl_image->load_addr = CONFIG_SYS_TEXT_BASE;
+	}
+	spl_image->os = IH_OS_U_BOOT;
+	spl_image->name = "U-Boot";
+}
+#endif
+
+int spl_parse_image_header(struct spl_image_info *spl_image,
+			   const struct image_header *header)
+{
+#ifdef CONFIG_SPL_LOAD_FIT_FULL
+	int ret = spl_load_fit_image(spl_image, header);
+
+	if (!ret)
+		return ret;
+#endif
+	printk("%s (%d): header=%p\n", __func__, __LINE__, header); // test-only
+	if (image_get_magic(header) == IH_MAGIC) {
+		printk("%s (%d)\n", __func__, __LINE__); // test-only
+#ifdef CONFIG_SPL_LEGACY_IMAGE_SUPPORT
+		u32 header_size = sizeof(struct image_header);
+
+#ifdef CONFIG_SPL_LEGACY_IMAGE_CRC_CHECK
+		/* check uImage header CRC */
+		if (!image_check_hcrc(header)) {
+			puts("SPL: Image header CRC check failed!\n");
+			return -EINVAL;
+		}
+#endif
+
+		if (spl_image->flags & SPL_COPY_PAYLOAD_ONLY) {
+			/*
+			 * On some system (e.g. powerpc), the load-address and
+			 * entry-point is located at address 0. We can't load
+			 * to 0-0x40. So skip header in this case.
+			 */
+			spl_image->load_addr = image_get_load(header);
+			spl_image->entry_point = image_get_ep(header);
+			spl_image->size = image_get_data_size(header);
+		} else {
+			spl_image->entry_point = image_get_ep(header);
+			/* Load including the header */
+			spl_image->load_addr = image_get_load(header) -
+				header_size;
+			spl_image->size = image_get_data_size(header) +
+				header_size;
+		}
+#ifdef CONFIG_SPL_LEGACY_IMAGE_CRC_CHECK
+		/* store uImage data length and CRC to check later */
+		spl_image->dcrc_data = image_get_load(header);
+		spl_image->dcrc_length = image_get_data_size(header);
+		spl_image->dcrc = image_get_dcrc(header);
+#endif
+
+		spl_image->os = image_get_os(header);
+		spl_image->name = image_get_name(header);
+		debug(SPL_TPL_PROMPT
+		      "payload image: %32s load addr: 0x%lx size: %d\n",
+		      spl_image->name, spl_image->load_addr, spl_image->size);
+#else
+		/* LEGACY image not supported */
+		debug("Legacy boot image support not enabled, proceeding to other boot methods\n");
+		return -EINVAL;
+#endif
+	} else {
+#ifdef CONFIG_SPL_PANIC_ON_RAW_IMAGE
+		/*
+		 * CONFIG_SPL_PANIC_ON_RAW_IMAGE is defined when the
+		 * code which loads images in SPL cannot guarantee that
+		 * absolutely all read errors will be reported.
+		 * An example is the LPC32XX MLC NAND driver, which
+		 * will consider that a completely unreadable NAND block
+		 * is bad, and thus should be skipped silently.
+		 */
+		panic("** no mkimage signature but raw image not supported");
+#endif
+
+#ifdef CONFIG_SPL_OS_BOOT
+		ulong start, end;
+
+		if (!bootz_setup((ulong)header, &start, &end)) {
+			spl_image->name = "Linux";
+			spl_image->os = IH_OS_LINUX;
+			spl_image->load_addr = CONFIG_SYS_LOAD_ADDR;
+			spl_image->entry_point = CONFIG_SYS_LOAD_ADDR;
+			spl_image->size = end - start;
+			debug(SPL_TPL_PROMPT
+			      "payload zImage, load addr: 0x%lx size: %d\n",
+			      spl_image->load_addr, spl_image->size);
+			return 0;
+		}
+#endif
+
+#if 0
+//#ifdef CONFIG_SPL_RAW_IMAGE_SUPPORT
+		/* Signature not found - assume u-boot.bin */
+		debug("mkimage signature not found - ih_magic = %x\n",
+			header->ih_magic);
+		spl_set_header_raw_uboot(spl_image);
+//#else
+#endif
+		/* RAW image not supported, proceed to other boot methods. */
+		debug("Raw boot image support not enabled, proceeding to other boot methods\n");
+		return -EINVAL;
+//#endif
+	}
+
+	return 0;
+}
+
+
+
+static ulong spl_nor_load_read(struct spl_load_info *load, ulong sector,
+			       ulong count, void *buf)
+{
+	debug("%s: sector %lx, count %lx, buf %p\n",
+	      __func__, sector, count, buf);
+	memcpy(buf, (void *)sector, count);
+
+	return count;
+}
+
+#if 0
+unsigned long __weak spl_nor_get_uboot_base(void)
+{
+	printk("%s (%d): CONFIG_SYS_UBOOT_BASE=%08x\n", __func__, __LINE__, CONFIG_SYS_UBOOT_BASE); // test-only
+	return CONFIG_SYS_UBOOT_BASE;
+}
+#endif
+
+unsigned long spl_nor_get_uboot_base(void)
+{
+	void *uboot_base = (void *)0x9c009864;
+
+	printk("%s (%d): uboot_base=%p\n", __func__, __LINE__, uboot_base); // test-only
+	if (fdt_magic(uboot_base) == FDT_MAGIC)
+		return (unsigned long)uboot_base + fdt_totalsize(uboot_base);
+
+	return (unsigned long)uboot_base;
+}
+
+
+
+
+
+#define LZMA_LEN	(1 << 20)
+
+int spl_parse_legacy_header(struct spl_image_info *spl_image,
+			    const struct image_header *header)
+{
+	u32 header_size = sizeof(struct image_header);
+
+	/* check uImage header CRC */
+	if (IS_ENABLED(CONFIG_SPL_LEGACY_IMAGE_CRC_CHECK) &&
+	    !image_check_hcrc(header)) {
+		puts("SPL: Image header CRC check failed!\n");
+		return -EINVAL;
+	}
+
+	if (spl_image->flags & SPL_COPY_PAYLOAD_ONLY) {
+		/*
+		 * On some system (e.g. powerpc), the load-address and
+		 * entry-point is located at address 0. We can't load
+		 * to 0-0x40. So skip header in this case.
+		 */
+		spl_image->load_addr = image_get_load(header);
+		spl_image->entry_point = image_get_ep(header);
+		spl_image->size = image_get_data_size(header);
+	} else {
+		spl_image->entry_point = image_get_ep(header);
+		/* Load including the header */
+		spl_image->load_addr = image_get_load(header) -
+			header_size;
+		spl_image->size = image_get_data_size(header) +
+			header_size;
+	}
+
+#ifdef CONFIG_SPL_LEGACY_IMAGE_CRC_CHECK
+	/* store uImage data length and CRC to check later */
+	spl_image->dcrc_data = image_get_load(header);
+	spl_image->dcrc_length = image_get_data_size(header);
+	spl_image->dcrc = image_get_dcrc(header);
+#endif
+
+	spl_image->os = image_get_os(header);
+	spl_image->name = image_get_name(header);
+	debug(SPL_TPL_PROMPT
+	      "payload image: %32s load addr: 0x%lx size: %d\n",
+	      spl_image->name, spl_image->load_addr, spl_image->size);
+
+	return 0;
+}
+
+
+
+
+int spl_load_legacy_img(struct spl_image_info *spl_image,
+			const struct image_header *header,
+			uintptr_t dataptr, struct spl_load_info *info)
+{
+	__maybe_unused SizeT lzma_len;
+	__maybe_unused void *src;
+	int ret;
+
+	ret = spl_parse_image_header(spl_image, header);
+	if (ret)
+		return ret;
+
+	switch (image_get_comp(header)) {
+	case IH_COMP_NONE:
+		info->read(info, dataptr, spl_image->size,
+			   (void *)(unsigned long)spl_image->load_addr);
+		break;
+
+#if IS_ENABLED(CONFIG_SPL_LZMA)
+	case IH_COMP_LZMA:
+		lzma_len = LZMA_LEN;
+
+		debug("LZMA: Decompressing %08lx to %08lx\n",
+		      dataptr, spl_image->load_addr);
+		src = malloc(spl_image->size);
+		if (!src) {
+			printf("Unable to allocate %d bytes for LZMA\n",
+			       spl_image->size);
+			return -ENOMEM;
+		}
+
+		info->read(info, dataptr, spl_image->size, src);
+		ret = lzmaBuffToBuffDecompress((void *)spl_image->load_addr,
+					       &lzma_len, src, spl_image->size);
+		if (ret) {
+			printf("LZMA decompression error: %d\n", ret);
+			return ret;
+		}
+
+		spl_image->size = lzma_len;
+		break;
+#endif
+
+	default:
+		debug("Compression method %s is not supported\n",
+		      genimg_get_comp_short_name(image_get_comp(header)));
+		return -EINVAL;
+	}
+
+	/* Flush cache of loaded U-Boot image */
+	flush_cache((unsigned long)spl_image->load_addr, spl_image->size);
+
+	return 0;
+}
+
+
+static int spl_nor_load_image(struct spl_image_info *spl_image,
+			      struct spl_boot_device *bootdev)
+{
+	__maybe_unused const struct image_header *header;
+	__maybe_unused struct spl_load_info load;
+	struct image_header hdr;
+	uintptr_t dataptr;
+	int ret;
+
+	/*
+	 * Loading of the payload to SDRAM is done with skipping of
+	 * the mkimage header in this SPL NOR driver
+	 */
+	spl_image->flags |= SPL_COPY_PAYLOAD_ONLY;
+
+#ifdef CONFIG_SPL_OS_BOOT
+	if (!spl_start_uboot()) {
+		/*
+		 * Load Linux from its location in NOR flash to its defined
+		 * location in SDRAM
+		 */
+		header = (const struct image_header *)CONFIG_SYS_OS_BASE;
+#ifdef CONFIG_SPL_LOAD_FIT
+		if (image_get_magic(header) == FDT_MAGIC) {
+			debug("Found FIT\n");
+			load.bl_len = 1;
+			load.read = spl_nor_load_read;
+
+			ret = spl_load_simple_fit(spl_image, &load,
+						  CONFIG_SYS_OS_BASE,
+						  (void *)header);
+
+#if defined CONFIG_SYS_SPL_ARGS_ADDR && defined CONFIG_CMD_SPL_NOR_OFS
+			memcpy((void *)CONFIG_SYS_SPL_ARGS_ADDR,
+			       (void *)CONFIG_CMD_SPL_NOR_OFS,
+			       CONFIG_CMD_SPL_WRITE_SIZE);
+#endif
+			return ret;
+		}
+#endif
+		if (image_get_os(header) == IH_OS_LINUX) {
+			/* happy - was a Linux */
+
+			ret = spl_parse_image_header(spl_image, header);
+			if (ret)
+				return ret;
+
+			memcpy((void *)spl_image->load_addr,
+			       (void *)(CONFIG_SYS_OS_BASE +
+					sizeof(struct image_header)),
+			       spl_image->size);
+#ifdef CONFIG_SYS_FDT_BASE
+			spl_image->arg = (void *)CONFIG_SYS_FDT_BASE;
+#endif
+
+			return 0;
+		} else {
+			puts("The Expected Linux image was not found.\n"
+			     "Please check your NOR configuration.\n"
+			     "Trying to start u-boot now...\n");
+		}
+	}
+#endif
+
+	/*
+	 * Load real U-Boot from its location in NOR flash to its
+	 * defined location in SDRAM
+	 */
+#ifdef CONFIG_SPL_LOAD_FIT
+	header = (const struct image_header *)spl_nor_get_uboot_base();
+	if (image_get_magic(header) == FDT_MAGIC) {
+		debug("Found FIT format U-Boot\n");
+		load.bl_len = 1;
+		load.read = spl_nor_load_read;
+		ret = spl_load_simple_fit(spl_image, &load,
+					  spl_nor_get_uboot_base(),
+					  (void *)header);
+
+		return ret;
+	}
+#endif
+	if (IS_ENABLED(CONFIG_SPL_LOAD_IMX_CONTAINER)) {
+		load.bl_len = 1;
+		load.read = spl_nor_load_read;
+		return spl_load_imx_container(spl_image, &load,
+					      spl_nor_get_uboot_base());
+	}
+
+	/* Payload image may not be aligned, so copy it for safety */
+	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
+	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
+
+	/* Legacy image handling */
+	load.bl_len = 1;
+	load.read = spl_nor_load_read;
+	ret = spl_load_legacy_img(spl_image, &hdr, dataptr, &load);
+
+	return ret;
+}
+SPL_LOAD_IMAGE_METHOD("NOR", 0, BOOT_DEVICE_NOR, spl_nor_load_image);
+
+static int spl_load_image(struct spl_image_info *spl_image,
+			  struct spl_image_loader *loader)
+{
+	int ret;
+	struct spl_boot_device bootdev;
+
+	bootdev.boot_device = loader->boot_device;
+	bootdev.boot_device_name = NULL;
+
+	loader->load_image = spl_nor_load_image; // test-only
+
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
+	ret = loader->load_image(spl_image, &bootdev);
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
+#ifdef CONFIG_SPL_LEGACY_IMAGE_CRC_CHECK
+	if (!ret && spl_image->dcrc_length) {
+		/* check data crc */
+		ulong dcrc = crc32_wd(0, (unsigned char *)spl_image->dcrc_data,
+				      spl_image->dcrc_length, CHUNKSZ_CRC32);
+		if (dcrc != spl_image->dcrc) {
+			puts("SPL: Image data CRC check failed!\n");
+			ret = -EINVAL;
+		}
+	}
+#endif
+	return ret;
+}
+
+static struct spl_image_loader *spl_ll_find_loader(uint boot_device)
+{
+	struct spl_image_loader *drv =
+		ll_entry_start(struct spl_image_loader, spl_image_loader);
+	const int n_ents =
+		ll_entry_count(struct spl_image_loader, spl_image_loader);
+	struct spl_image_loader *entry;
+
+	for (entry = drv; entry != drv + n_ents; entry++) {
+		if (boot_device == entry->boot_device)
+			return entry;
+	}
+
+	/* Not found */
+	return NULL;
+}
+
+int do_spl_test(cmd_tbl_t *cmdtp, int flag, int argc, char * const argv[])
+{
+	struct spl_image_info spl_image;
+	struct spl_image_loader *loader;
+
+	printk("%s (%d)\n", __func__, __LINE__); // test-only
+	loader = spl_ll_find_loader(BOOT_DEVICE_NOR);
+	spl_load_image(&spl_image, loader);
+
+	return 0;
+}
+
+U_BOOT_CMD(
+	spl_test,	1,	0,	do_spl_test,
+	"SPL test",
 	"\n"
 );
 #endif
