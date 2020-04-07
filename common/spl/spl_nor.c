@@ -26,6 +26,7 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 {
 	__maybe_unused const struct image_header *header;
 	__maybe_unused struct spl_load_info load;
+	struct image_header hdr;
 	uintptr_t dataptr;
 	int ret;
 
@@ -108,15 +109,14 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 					      spl_nor_get_uboot_base());
 	}
 
+	/* Payload image may not be aligned, so copy it for safety */
+	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
 	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
 
 	/* Legacy image handling */
 	load.bl_len = 1;
 	load.read = spl_nor_load_read;
-	ret = spl_load_legacy_img(
-		spl_image,
-		(const struct image_header *)spl_nor_get_uboot_base(),
-		dataptr, &load);
+	ret = spl_load_legacy_img(spl_image, &hdr, dataptr, &load);
 
 	return ret;
 }
