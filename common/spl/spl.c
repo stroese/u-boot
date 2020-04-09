@@ -198,9 +198,8 @@ static int spl_load_fit_image(struct spl_image_info *spl_image,
 	int idx, conf_noffset;
 	int ret;
 
-#ifdef CONFIG_SPL_FIT_SIGNATURE
-	images.verify = 1;
-#endif
+	if (IS_ENABLED(CONFIG_SPL_FIT_SIGNATURE))
+		images.verify = 1;
 	ret = fit_image_load(&images, (ulong)header,
 			     NULL, &fit_uname_config,
 			     IH_ARCH_DEFAULT, IH_TYPE_STANDALONE, -1,
@@ -217,9 +216,8 @@ static int spl_load_fit_image(struct spl_image_info *spl_image,
 	debug(SPL_TPL_PROMPT "payload image: %32s load addr: 0x%lx size: %d\n",
 	      spl_image->name, spl_image->load_addr, spl_image->size);
 
-#ifdef CONFIG_SPL_FIT_SIGNATURE
-	images.verify = 1;
-#endif
+	if (IS_ENABLED(CONFIG_SPL_FIT_SIGNATURE))
+		images.verify = 1;
 	ret = fit_image_load(&images, (ulong)header,
 		       &fit_uname_fdt, &fit_uname_config,
 		       IH_ARCH_DEFAULT, IH_TYPE_FLATDT, -1,
@@ -238,9 +236,8 @@ static int spl_load_fit_image(struct spl_image_info *spl_image,
 				NULL), uname;
 	     idx++)
 	{
-#ifdef CONFIG_SPL_FIT_SIGNATURE
-		images.verify = 1;
-#endif
+		if (IS_ENABLED(CONFIG_SPL_FIT_SIGNATURE))
+			images.verify = 1;
 		ret = fit_image_load(&images, (ulong)header,
 				     &uname, &fit_uname_config,
 				     IH_ARCH_DEFAULT, IH_TYPE_LOADABLE, -1,

@@ -304,14 +304,14 @@ static int spl_load_fit_image(struct spl_load_info *info, ulong sector,
 		src = (void *)data;
 	}
 
-#ifdef CONFIG_SPL_FIT_SIGNATURE
-	printf("## Checking hash(es) for Image %s ... ",
-	       fit_get_name(fit, node, NULL));
-	if (!fit_image_verify_with_data(fit, node,
-					 src, length))
-		return -EPERM;
-	puts("OK\n");
-#endif
+	if (IS_ENABLED(CONFIG_SPL_FIT_SIGNATURE)) {
+		printf("## Checking hash(es) for Image %s ... ",
+		       fit_get_name(fit, node, NULL));
+		if (!fit_image_verify_with_data(fit, node,
+						src, length))
+			return -EPERM;
+		puts("OK\n");
+	}
 
 #ifdef CONFIG_SPL_FIT_IMAGE_POST_PROCESS
 	board_fit_image_post_process(&src, &length);
