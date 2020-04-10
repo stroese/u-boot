@@ -4,7 +4,6 @@
  */
 
 #include <common.h>
-#include <cpu_func.h>
 #include <malloc.h>
 #include <spl.h>
 
@@ -108,9 +107,6 @@ int spl_load_legacy_img(struct spl_image_info *spl_image,
 		      genimg_get_comp_short_name(image_get_comp(header)));
 		return -EINVAL;
 	}
-
-	/* Flush cache of loaded U-Boot image */
-	flush_cache((unsigned long)spl_image->load_addr, spl_image->size);
 
 	return 0;
 }
