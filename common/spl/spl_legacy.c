@@ -51,20 +51,3 @@ int spl_parse_legacy_header(struct spl_image_info *spl_image,
 
 	return 0;
 }
-
-int spl_load_legacy_img(struct spl_image_info *spl_image,
-			const struct image_header *header,
-			uintptr_t dataptr, struct spl_load_info *info)
-{
-	int ret;
-
-	ret = spl_parse_image_header(spl_image, header);
-	if (ret)
-		return ret;
-
-	dataptr = (uintptr_t)header + sizeof(struct image_header);
-	info->read(info, dataptr, spl_image->size,
-		   (void *)(unsigned long)spl_image->load_addr);
-
-	return 0;
-}
