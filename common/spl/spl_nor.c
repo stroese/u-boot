@@ -27,8 +27,6 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 	int ret;
 	__maybe_unused const struct image_header *header;
 	__maybe_unused struct spl_load_info load;
-	struct image_header hdr;
-	uintptr_t dataptr;
 
 	/*
 	 * Loading of the payload to SDRAM is done with skipping of
@@ -114,12 +112,9 @@ static int spl_nor_load_image(struct spl_image_info *spl_image,
 	if (ret)
 		return ret;
 
-	/* Payload image may not be aligned, so copy it for safety */
-	memcpy(&hdr, (void *)spl_nor_get_uboot_base(), sizeof(hdr));
-	dataptr = spl_nor_get_uboot_base() + sizeof(struct image_header);
-
 	memcpy((void *)(unsigned long)spl_image->load_addr,
-	       (void *)dataptr, spl_image->size);
+	       (void *)(spl_nor_get_uboot_base() + sizeof(struct image_header)),
+	       spl_image->size);
 
 	return 0;
 }
